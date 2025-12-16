@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, InsertRegistration, registrations } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,40 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// Registration functions
+export async function createRegistration(data: InsertRegistration) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot create registration: database not available");
+    throw new Error("Database not available");
+  }
+
+  try {
+    await db.insert(registrations).values(data);
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to create registration:", error);
+    throw error;
+  }
+}
+
+export async function getRegistrationByPhoneNumber(phoneNumber: string) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get registration: database not available");
+    return undefined;
+  }
+
+  try {
+    const result = await db
+      .select()
+      .from(registrations)
+      .where(eq(registrations.phoneNumber, phoneNumber))
+      .limit(1);
+
+    return result.length > 0 ? result[0] : undefined;
+  } catch (error) {
+    console.error("[Database] Failed to get registration:", error);
+    return undefined;
+  }
+}

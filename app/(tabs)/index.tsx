@@ -1,278 +1,264 @@
-import { Image } from "expo-image";
-import { useRouter, Link } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+  Alert,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { HelloWave } from "@/components/hello-wave";
-import ParallaxScrollView from "@/components/parallax-scroll-view";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { getLoginUrl } from "@/constants/oauth";
-import { useAuth } from "@/hooks/use-auth";
+import { useThemeColor } from "@/hooks/use-theme-color";
+import { trpc } from "@/lib/trpc";
 
 export default function HomeScreen() {
-  const { user, loading, isAuthenticated, logout } = useAuth();
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [username, setUsername] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState<{ phone?: string; username?: string }>({});
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const textColor = useThemeColor({}, "text");
+  const placeholderColor = useThemeColor({}, "icon");
+  const inputBgColor = useThemeColor({}, "background");
+  
+  const registerMutation = trpc.registration.register.useMutation();
 
-  useEffect(() => {
-    console.log("[HomeScreen] Auth state:", {
-      hasUser: !!user,
-      loading,
-      isAuthenticated,
-      user: user ? { id: user.id, openId: user.openId, name: user.name, email: user.email } : null,
-    });
-  }, [user, loading, isAuthenticated]);
+  // 验证手机号格式
+  const validatePhoneNumber = (phone: string): boolean => {
+    const phoneRegex = /^1[3-9]\d{9}$/;
+    return phoneRegex.test(phone);
+  };
 
-  const handleLogin = async () => {
+  // 验证用户名
+  const validateUsername = (name: string): boolean => {
+    return name.trim().length >= 2 && name.trim().length <= 20;
+  };
+
+  // 处理注册
+  const handleRegister = async () => {
+    const newErrors: { phone?: string; username?: string } = {};
+
+    // 验证输入
+    if (!phoneNumber) {
+      newErrors.phone = "请输入手机号";
+    } else if (!validatePhoneNumber(phoneNumber)) {
+      newErrors.phone = "请输入有效的手机号";
+    }
+
+    if (!username) {
+      newErrors.username = "请输入用户名";
+    } else if (!validateUsername(username)) {
+      newErrors.username = "用户名长度需在 2-20 个字符";
+    }
+
+    setErrors(newErrors);
+
+    // 如果有错误，不继续
+    if (Object.keys(newErrors).length > 0) {
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      console.log("[Auth] Login button clicked");
-      setIsLoggingIn(true);
-      const loginUrl = getLoginUrl();
-      console.log("[Auth] Generated login URL:", loginUrl);
+      // 调用注册 API
+      const result = await registerMutation.mutateAsync({
+        phoneNumber: phoneNumber.trim(),
+        username: username.trim(),
+      });
 
-      // On web, use direct redirect in same tab
-      // On mobile, use WebBrowser to open OAuth in a separate context
-      if (Platform.OS === "web") {
-        console.log("[Auth] Web platform: redirecting to OAuth in same tab...");
-        window.location.href = loginUrl;
-        return;
-      }
-
-      // Mobile: Open OAuth URL in browser
-      // The OAuth server will redirect to our deep link (manusapp://oauth/callback?code=...&state=...)
-      console.log("[Auth] Opening OAuth URL in browser...");
-      const result = await WebBrowser.openAuthSessionAsync(
-        loginUrl,
-        undefined, // Deep link is already configured in getLoginUrl, so no need to specify here
-        {
-          preferEphemeralSession: false,
-          showInRecents: true,
-        },
-      );
-
-      console.log("[Auth] WebBrowser result:", result);
-      if (result.type === "cancel") {
-        console.log("[Auth] OAuth cancelled by user");
-      } else if (result.type === "dismiss") {
-        console.log("[Auth] OAuth dismissed");
-      } else if (result.type === "success" && result.url) {
-        console.log("[Auth] OAuth session successful, navigating to callback:", result.url);
-        // Extract code and state from the URL
-        try {
-          // Parse the URL - it might be exp:// or a regular URL
-          let url: URL;
-          if (result.url.startsWith("exp://") || result.url.startsWith("exps://")) {
-            // For exp:// URLs, we need to parse them differently
-            // Format: exp://192.168.31.156:8081/--/oauth/callback?code=...&state=...
-            const urlStr = result.url.replace(/^exp(s)?:\/\//, "http://");
-            url = new URL(urlStr);
-          } else {
-            url = new URL(result.url);
-          }
-
-          const code = url.searchParams.get("code");
-          const state = url.searchParams.get("state");
-          const error = url.searchParams.get("error");
-
-          console.log("[Auth] Extracted params from callback URL:", {
-            code: code?.substring(0, 20) + "...",
-            state: state?.substring(0, 20) + "...",
-            error,
-          });
-
-          if (error) {
-            console.error("[Auth] OAuth error in callback:", error);
-            return;
-          }
-
-          if (code && state) {
-            // Navigate to callback route with params
-            console.log("[Auth] Navigating to callback route with params...");
-            router.push({
-              pathname: "/oauth/callback" as any,
-              params: { code, state },
-            });
-          } else {
-            console.error("[Auth] Missing code or state in callback URL");
-          }
-        } catch (err) {
-          console.error("[Auth] Failed to parse callback URL:", err, result.url);
-          // Fallback: try parsing with regex
-          const codeMatch = result.url.match(/[?&]code=([^&]+)/);
-          const stateMatch = result.url.match(/[?&]state=([^&]+)/);
-
-          if (codeMatch && stateMatch) {
-            const code = decodeURIComponent(codeMatch[1]);
-            const state = decodeURIComponent(stateMatch[1]);
-            console.log("[Auth] Fallback: extracted params via regex, navigating...");
-            router.push({
-              pathname: "/oauth/callback" as any,
-              params: { code, state },
-            });
-          } else {
-            console.error("[Auth] Could not extract code/state from URL");
-          }
-        }
+      if (result.success) {
+        // 注册成功，导航到成功页面
+        router.push({
+          pathname: "/success" as any,
+          params: {
+            phoneNumber: phoneNumber.trim(),
+            username: username.trim(),
+          },
+        });
       }
     } catch (error) {
-      console.error("[Auth] Login error:", error);
+      console.error("[Register] Error:", error);
+      const errorMessage = error instanceof Error ? error.message : "注册失败";
+      Alert.alert("注册失败", errorMessage);
     } finally {
-      setIsLoggingIn(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: "#A1CEDC", dark: "#1D3D47" }}
-      headerImage={
-        <Image
-          source={require("@/assets/images/partial-react-logo.png")}
-          style={styles.reactLogo}
-        />
-      }
+    <ThemedView
+      style={[
+        styles.container,
+        {
+          paddingTop: Math.max(insets.top, 20),
+          paddingBottom: Math.max(insets.bottom, 20),
+          paddingLeft: Math.max(insets.left, 20),
+          paddingRight: Math.max(insets.right, 20),
+        },
+      ]}
     >
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.authContainer}>
-        {loading ? (
-          <ActivityIndicator />
-        ) : isAuthenticated && user ? (
-          <ThemedView style={styles.userInfo}>
-            <ThemedText type="subtitle">Logged in as</ThemedText>
-            <ThemedText type="defaultSemiBold">{user.name || user.email || user.openId}</ThemedText>
-            <Pressable onPress={logout} style={styles.logoutButton}>
-              <ThemedText style={styles.logoutText}>Logout</ThemedText>
-            </Pressable>
-          </ThemedView>
-        ) : (
-          <Pressable
-            onPress={handleLogin}
-            disabled={isLoggingIn}
-            style={[styles.loginButton, isLoggingIn && styles.loginButtonDisabled]}
-          >
-            {isLoggingIn ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <ThemedText style={styles.loginText}>Login</ThemedText>
-            )}
-          </Pressable>
-        )}
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{" "}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: "cmd + d",
-              android: "cmd + m",
-              web: "F12",
-            })}
-          </ThemedText>{" "}
-          to open developer tools.
+      {/* 标题 */}
+      <View style={styles.headerContainer}>
+        <ThemedText type="title" style={styles.title}>
+          用户注册
         </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert("Action pressed")} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert("Share pressed")}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert("Delete pressed")}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+        <ThemedText type="default" style={styles.subtitle}>
+          输入您的信息完成注册
+        </ThemedText>
+      </View>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{" "}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{" "}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{" "}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      {/* 表单容器 */}
+      <View style={styles.formContainer}>
+        {/* 手机号输入框 */}
+        <View style={styles.inputGroup}>
+          <ThemedText type="defaultSemiBold" style={styles.label}>
+            手机号
+          </ThemedText>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: textColor,
+                backgroundColor: inputBgColor,
+                borderColor: errors.phone ? "#FF3B30" : "#E5E5EA",
+              },
+            ]}
+            placeholder="请输入手机号"
+            placeholderTextColor={placeholderColor}
+            keyboardType="phone-pad"
+            value={phoneNumber}
+            onChangeText={(text) => {
+              setPhoneNumber(text);
+              if (errors.phone) {
+                setErrors({ ...errors, phone: undefined });
+              }
+            }}
+            editable={!isLoading}
+            maxLength={11}
+          />
+          {errors.phone && (
+            <ThemedText type="default" style={styles.errorText}>
+              {errors.phone}
+            </ThemedText>
+          )}
+        </View>
+
+        {/* 用户名输入框 */}
+        <View style={styles.inputGroup}>
+          <ThemedText type="defaultSemiBold" style={styles.label}>
+            用户名
+          </ThemedText>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: textColor,
+                backgroundColor: inputBgColor,
+                borderColor: errors.username ? "#FF3B30" : "#E5E5EA",
+              },
+            ]}
+            placeholder="请输入用户名"
+            placeholderTextColor={placeholderColor}
+            value={username}
+            onChangeText={(text) => {
+              setUsername(text);
+              if (errors.username) {
+                setErrors({ ...errors, username: undefined });
+              }
+            }}
+            editable={!isLoading}
+            maxLength={20}
+          />
+          {errors.username && (
+            <ThemedText type="default" style={styles.errorText}>
+              {errors.username}
+            </ThemedText>
+          )}
+        </View>
+      </View>
+
+      {/* 注册按钮 */}
+      <Pressable
+        onPress={handleRegister}
+        disabled={isLoading}
+        style={[styles.registerButton, isLoading && styles.registerButtonDisabled]}
+      >
+        {isLoading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <ThemedText type="defaultSemiBold" style={styles.registerButtonText}>
+            注册
+          </ThemedText>
+        )}
+      </Pressable>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+  container: {
+    flex: 1,
+    justifyContent: "flex-start",
   },
-  stepContainer: {
-    gap: 8,
+  headerContainer: {
+    marginBottom: 32,
+    alignItems: "center",
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: "bold",
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: "absolute",
+  subtitle: {
+    fontSize: 16,
+    lineHeight: 24,
   },
-  authContainer: {
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 8,
-    backgroundColor: "rgba(0, 0, 0, 0.05)",
+  formContainer: {
+    marginBottom: 32,
+    gap: 20,
   },
-  userInfo: {
+  inputGroup: {
     gap: 8,
-    alignItems: "center",
   },
-  loginButton: {
-    backgroundColor: "#007AFF",
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  input: {
+    borderWidth: 1.5,
+    borderRadius: 8,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    fontSize: 16,
+    lineHeight: 24,
+    minHeight: 48,
+  },
+  errorText: {
+    color: "#FF3B30",
+    fontSize: 12,
+    lineHeight: 16,
+    marginLeft: 4,
+  },
+  registerButton: {
+    backgroundColor: "#007AFF",
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 44,
+    minHeight: 48,
   },
-  loginButtonDisabled: {
+  registerButtonDisabled: {
     opacity: 0.6,
   },
-  loginText: {
+  registerButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
-  },
-  logoutButton: {
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    backgroundColor: "rgba(255, 59, 48, 0.1)",
-  },
-  logoutText: {
-    color: "#FF3B30",
-    fontSize: 14,
-    fontWeight: "500",
   },
 });

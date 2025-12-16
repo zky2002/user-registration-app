@@ -25,4 +25,14 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// Registration records table
+export const registrations = mysqlTable("registrations", {
+  id: int("id").autoincrement().primaryKey(),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  username: varchar("username", { length: 255 }).notNull(),
+  userId: int("userId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Registration = typeof registrations.$inferSelect;
+export type InsertRegistration = typeof registrations.$inferInsert;
