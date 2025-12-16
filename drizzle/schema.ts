@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -28,10 +28,13 @@ export type InsertUser = typeof users.$inferInsert;
 // Registration records table
 export const registrations = mysqlTable("registrations", {
   id: int("id").autoincrement().primaryKey(),
-  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull().unique(),
   username: varchar("username", { length: 255 }).notNull(),
   userId: int("userId"),
+  faceFeatures: text("faceFeatures"), // JSON string storing face embeddings
+  faceRegistered: boolean("faceRegistered").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type Registration = typeof registrations.$inferSelect;

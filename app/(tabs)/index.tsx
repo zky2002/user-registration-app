@@ -25,8 +25,9 @@ export default function HomeScreen() {
   const textColor = useThemeColor({}, "text");
   const placeholderColor = useThemeColor({}, "icon");
   const inputBgColor = useThemeColor({}, "background");
-  
+
   const registerMutation = trpc.registration.register.useMutation();
+  const loginMutation = trpc.registration.login.useMutation();
 
   // 验证手机号格式
   const validatePhoneNumber = (phone: string): boolean => {
@@ -39,8 +40,8 @@ export default function HomeScreen() {
     return name.trim().length >= 2 && name.trim().length <= 20;
   };
 
-  // 处理注册
-  const handleRegister = async () => {
+  // 处理注册/登录
+  const handleRegisterOrLogin = async () => {
     const newErrors: { phone?: string; username?: string } = {};
 
     // 验证输入
@@ -65,26 +66,50 @@ export default function HomeScreen() {
 
     setIsLoading(true);
     try {
-      // 调用注册 API
-      const result = await registerMutation.mutateAsync({
+      // 先尝试登录
+      try {
+        const loginResult = await loginMutation.mutateAsync({
+          phoneNumber: phoneNumber.trim(),
+        });
+
+        if (loginResult.success) {
+          // 登录成功，导航到第二个页面
+          router.push({
+            pathname: "/face-recognition" as any,
+            params: {
+              phoneNumber: phoneNumber.trim(),
+              username: loginResult.username,
+              isLogin: "true",
+            },
+          });
+          return;
+        }
+      } catch (loginError) {
+        // 登录失败，尝试注册
+        console.log("[Register] Login failed, attempting registration...");
+      }
+
+      // 如果登录失败，进行注册
+      const registerResult = await registerMutation.mutateAsync({
         phoneNumber: phoneNumber.trim(),
         username: username.trim(),
       });
 
-      if (result.success) {
-        // 注册成功，导航到成功页面
+      if (registerResult.success) {
+        // 注册成功，导航到第二个页面
         router.push({
-          pathname: "/success" as any,
+          pathname: "/face-recognition" as any,
           params: {
             phoneNumber: phoneNumber.trim(),
             username: username.trim(),
+            isLogin: "false",
           },
         });
       }
     } catch (error) {
       console.error("[Register] Error:", error);
-      const errorMessage = error instanceof Error ? error.message : "注册失败";
-      Alert.alert("注册失败", errorMessage);
+      const errorMessage = error instanceof Error ? error.message : "操作失败";
+      Alert.alert("失败", errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -105,10 +130,10 @@ export default function HomeScreen() {
       {/* 标题 */}
       <View style={styles.headerContainer}>
         <ThemedText type="title" style={styles.title}>
-          用户注册
+          用户注册/登录
         </ThemedText>
         <ThemedText type="default" style={styles.subtitle}>
-          输入您的信息完成注册
+          输入您的信息完成注册或登录
         </ThemedText>
       </View>
 
@@ -182,9 +207,9 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* 注册按钮 */}
+      {/* 注册/登录按钮 */}
       <Pressable
-        onPress={handleRegister}
+        onPress={handleRegisterOrLogin}
         disabled={isLoading}
         style={[styles.registerButton, isLoading && styles.registerButtonDisabled]}
       >
@@ -192,7 +217,7 @@ export default function HomeScreen() {
           <ActivityIndicator color="#fff" />
         ) : (
           <ThemedText type="defaultSemiBold" style={styles.registerButtonText}>
-            注册
+            注册/登录
           </ThemedText>
         )}
       </Pressable>

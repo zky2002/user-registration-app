@@ -19,7 +19,7 @@ export const appRouter = router({
     }),
   }),
 
-  // Registration router
+  // Registration and Login router
   registration: router({
     register: publicProcedure
       .input(
@@ -50,6 +50,34 @@ export const appRouter = router({
           console.error("[Registration] Error:", error);
           throw new Error(
             error instanceof Error ? error.message : "Registration failed"
+          );
+        }
+      }),
+
+    login: publicProcedure
+      .input(
+        z.object({
+          phoneNumber: z.string().regex(/^1[3-9]\d{9}$/, "Invalid phone number"),
+        })
+      )
+      .mutation(async ({ input }) => {
+        try {
+          // Check if phone number exists
+          const existing = await db.getRegistrationByPhoneNumber(input.phoneNumber);
+          if (!existing) {
+            throw new Error("Phone number not found");
+          }
+
+          return {
+            success: true,
+            message: "Login successful",
+            username: existing.username,
+            registrationId: existing.id,
+          };
+        } catch (error) {
+          console.error("[Login] Error:", error);
+          throw new Error(
+            error instanceof Error ? error.message : "Login failed"
           );
         }
       }),
