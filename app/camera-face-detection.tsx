@@ -14,6 +14,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { trpc } from "@/lib/trpc";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -36,6 +37,9 @@ export default function CameraFaceDetectionScreen() {
     width: number;
     height: number;
   } | null>(null);
+
+  // tRPC mutation for saving face
+  const saveFaceMutation = trpc.registration.saveFace.useMutation();
 
   // 请求相机权限
   useEffect(() => {
@@ -113,28 +117,14 @@ export default function CameraFaceDetectionScreen() {
     try {
       setIsProcessing(true);
 
-      // 调用后端 API 保存人脸数据
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000"}/api/registration/save-face`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            phoneNumber,
-            username,
-            boundingBox,
-            photoUri,
-          }),
-        }
-      );
+      // 使用 tRPC 调用后端 API
+      const result = await saveFaceMutation.mutateAsync({
+        phoneNumber,
+        username,
+        boundingBox,
+        photoUri,
+      });
 
-      if (!response.ok) {
-        throw new Error("Failed to save face data");
-      }
-
-      const result = await response.json();
       console.log("[CameraFaceDetection] Face saved:", result);
 
       Alert.alert("成功", "人脸信息已保存", [
@@ -148,7 +138,10 @@ export default function CameraFaceDetectionScreen() {
       ]);
     } catch (error) {
       console.error("[CameraFaceDetection] Error saving face:", error);
-      Alert.alert("错误", "保存人脸信息失败");
+      Alert.alert(
+        "错误",
+        error instanceof Error ? error.message : "保存人脸信息失败"
+      );
     } finally {
       setIsProcessing(false);
     }
