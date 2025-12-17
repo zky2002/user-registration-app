@@ -126,3 +126,29 @@ export async function getRegistrationByPhoneNumber(phoneNumber: string) {
     return undefined;
   }
 }
+
+export async function updateRegistrationFace(
+  registrationId: number,
+  data: { faceFeatures?: string; faceRegistered?: boolean }
+) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot update registration: database not available");
+    throw new Error("Database not available");
+  }
+
+  try {
+    await db
+      .update(registrations)
+      .set({
+        faceFeatures: data.faceFeatures,
+        faceRegistered: data.faceRegistered,
+        updatedAt: new Date(),
+      })
+      .where(eq(registrations.id, registrationId));
+    return true;
+  } catch (error) {
+    console.error("[Database] Failed to update registration face:", error);
+    throw error;
+  }
+}

@@ -81,6 +81,93 @@ export const appRouter = router({
           );
         }
       }),
+
+    // Save face data
+    saveFace: publicProcedure
+      .input(
+        z.object({
+          phoneNumber: z.string().regex(/^1[3-9]\d{9}$/),
+          username: z.string(),
+          boundingBox: z.object({
+            x: z.number(),
+            y: z.number(),
+            width: z.number(),
+            height: z.number(),
+          }),
+          photoUri: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        try {
+          // Get registration record
+          const registration = await db.getRegistrationByPhoneNumber(input.phoneNumber);
+          if (!registration) {
+            throw new Error("Registration not found");
+          }
+
+          // Save face features (storing bounding box as JSON)
+          const faceFeatures = JSON.stringify({
+            boundingBox: input.boundingBox,
+            timestamp: new Date().toISOString(),
+          });
+
+          await db.updateRegistrationFace(registration.id, {
+            faceFeatures,
+            faceRegistered: true,
+          });
+
+          return {
+            success: true,
+            message: "Face data saved successfully",
+            registrationId: registration.id,
+          };
+        } catch (error) {
+          console.error("[SaveFace] Error:", error);
+          throw new Error(
+            error instanceof Error ? error.message : "Failed to save face data"
+          );
+        }
+      }),
+
+    // Get face data
+    getFace: publicProcedure
+      .input(
+        z.object({
+          phoneNumber: z.string().regex(/^1[3-9]\d{9}$/),
+        })
+      )
+      .query(async ({ input }) => {
+        try {
+          const registration = await db.getRegistrationByPhoneNumber(input.phoneNumber);
+          if (!registration) {
+            return {
+              success: false,
+              registered: false,
+              boundingBox: null,
+            };
+          }
+
+          if (!registration.faceRegistered || !registration.faceFeatures) {
+            return {
+              success: true,
+              registered: false,
+              boundingBox: null,
+            };
+          }
+
+          const faceData = JSON.parse(registration.faceFeatures);
+          return {
+            success: true,
+            registered: true,
+            boundingBox: faceData.boundingBox,
+          };
+        } catch (error) {
+          console.error("[GetFace] Error:", error);
+          throw new Error(
+            error instanceof Error ? error.message : "Failed to get face data"
+          );
+        }
+      }),
   }),
 });
 

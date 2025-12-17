@@ -19,9 +19,8 @@ export default function FaceRecognitionScreen() {
 
   const handleRegisterFace = () => {
     router.push({
-      pathname: "/blank-test" as any,
+      pathname: "/register-face" as any,
       params: {
-        action: "register_face",
         phoneNumber,
         username,
       },
