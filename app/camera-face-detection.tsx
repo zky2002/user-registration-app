@@ -9,11 +9,12 @@ import {
   Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
+import { CameraView, useCameraPermissions } from "expo-camera";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { initializeModel, detectFaces } from "@/lib/face-detector-simple";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -30,12 +31,31 @@ export default function CameraFaceDetectionScreen() {
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [modelLoading, setModelLoading] = useState(true);
   const [detectedFace, setDetectedFace] = useState<{
     x: number;
     y: number;
     width: number;
     height: number;
   } | null>(null);
+
+  // 初始化模型
+  useEffect(() => {
+    const loadModel = async () => {
+      try {
+        console.log("[CameraFaceDetection] Loading face detection model...");
+        await initializeModel();
+        console.log("[CameraFaceDetection] Model loaded successfully");
+        setModelLoading(false);
+      } catch (error) {
+        console.error("[CameraFaceDetection] Failed to load model:", error);
+        Alert.alert("错误", "加载人脸检测模型失败");
+        setModelLoading(false);
+      }
+    };
+
+    loadModel();
+  }, []);
 
   // 请求相机权限
   useEffect(() => {
@@ -44,9 +64,9 @@ export default function CameraFaceDetectionScreen() {
     }
   }, [permission, requestPermission]);
 
-  // 模拟人脸检测（实际应使用 TensorFlow.js + YOLO-Face）
+  // 人脸检测
   const detectFace = async () => {
-    if (!cameraRef.current || isProcessing) return;
+    if (!cameraRef.current || isProcessing || modelLoading) return;
 
     setIsProcessing(true);
     try {
@@ -58,21 +78,46 @@ export default function CameraFaceDetectionScreen() {
 
       console.log("[CameraFaceDetection] Photo captured:", photo.uri);
 
-      // 这里应该使用 TensorFlow.js + YOLO-Face 进行人脸检测
-      // 暂时使用模拟数据
-      const mockFaceDetection = {
-        x: screenWidth * 0.2,
-        y: screenHeight * 0.25,
-        width: screenWidth * 0.6,
-        height: screenHeight * 0.5,
+      // 加载图像
+      const response = await fetch(photo.uri);
+      const blob = await response.blob();
+      const bitmap = await createImageBitmap(blob);
+
+      // 创建 canvas 并绘制图像
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        throw new Error("Failed to get canvas context");
+      }
+      ctx.drawImage(bitmap, 0, 0);
+
+      // 运行人脸检测
+      console.log("[CameraFaceDetection] Running face detection...");
+      const detections = await detectFaces(canvas);
+
+      if (detections.length === 0) {
+        Alert.alert("未检测到人脸", "请确保您的脸部清晰可见，然后重新拍摄");
+        setDetectedFace(null);
+        return;
+      }
+
+      // 使用第一个检测到的人脸（通常是最大的）
+      const detection = detections[0];
+      const faceData = {
+        x: detection.x,
+        y: detection.y,
+        width: detection.width,
+        height: detection.height,
       };
 
-      setDetectedFace(mockFaceDetection);
+      setDetectedFace(faceData);
 
       // 显示检测结果
       Alert.alert(
         "人脸检测成功",
-        `检测到人脸\n位置: (${Math.round(mockFaceDetection.x)}, ${Math.round(mockFaceDetection.y)})\n大小: ${Math.round(mockFaceDetection.width)} × ${Math.round(mockFaceDetection.height)}`,
+        `检测到人脸\n位置: (${Math.round(detection.x)}, ${Math.round(detection.y)})\n大小: ${Math.round(detection.width)} × ${Math.round(detection.height)}\n置信度: ${(detection.confidence * 100).toFixed(1)}%`,
         [
           {
             text: "重新拍摄",
@@ -80,7 +125,7 @@ export default function CameraFaceDetectionScreen() {
           },
           {
             text: "确认保存",
-            onPress: () => handleSaveFace(photo.uri, mockFaceDetection),
+            onPress: () => handleSaveFace(photo.uri, faceData),
           },
         ]
       );
@@ -117,7 +162,7 @@ export default function CameraFaceDetectionScreen() {
               width: Math.round(boundingBox.width),
               height: Math.round(boundingBox.height),
             },
-            photoUri, // 实际应上传图片文件
+            photoUri,
           }),
         }
       );
@@ -180,6 +225,29 @@ export default function CameraFaceDetectionScreen() {
     );
   }
 
+  if (modelLoading) {
+    return (
+      <ThemedView
+        style={[
+          styles.container,
+          {
+            paddingTop: Math.max(insets.top, 20),
+            paddingBottom: Math.max(insets.bottom, 20),
+            paddingLeft: Math.max(insets.left, 20),
+            paddingRight: Math.max(insets.right, 20),
+          },
+        ]}
+      >
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={accentColor} />
+          <ThemedText type="default" style={styles.loadingText}>
+            初始化人脸检测中...
+          </ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
       {/* 相机预览 */}
@@ -206,7 +274,7 @@ export default function CameraFaceDetectionScreen() {
         {/* 提示文字 */}
         <View style={styles.instructionContainer}>
           <ThemedText type="defaultSemiBold" style={styles.instructionText}>
-            {mode === "register" ? "请对准您的脸部" : "请对准要验证的脸部"}
+            请对准您的脸部
           </ThemedText>
         </View>
       </CameraView>
@@ -275,6 +343,11 @@ const styles = StyleSheet.create({
   permissionText: {
     fontSize: 16,
     lineHeight: 24,
+    textAlign: "center",
+  },
+  loadingText: {
+    fontSize: 14,
+    lineHeight: 20,
     textAlign: "center",
   },
   permissionButton: {
