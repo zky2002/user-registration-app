@@ -29,9 +29,8 @@ export default function FaceRecognitionScreen() {
 
   const handleVerifyOwnFace = () => {
     router.push({
-      pathname: "/blank-test" as any,
+      pathname: "/verify-own-face" as any,
       params: {
-        action: "verify_own_face",
         phoneNumber,
         username,
       },
@@ -40,9 +39,8 @@ export default function FaceRecognitionScreen() {
 
   const handleVerifyOtherFace = () => {
     router.push({
-      pathname: "/blank-test" as any,
+      pathname: "/verify-other-face" as any,
       params: {
-        action: "verify_other_face",
         phoneNumber,
         username,
       },

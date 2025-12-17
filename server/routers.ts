@@ -168,6 +168,38 @@ export const appRouter = router({
           );
         }
       }),
+
+    // Search user by username
+    searchUser: publicProcedure
+      .input(
+        z.object({
+          username: z.string().min(2).max(20),
+        })
+      )
+      .query(async ({ input }) => {
+        try {
+          const registration = await db.getRegistrationByUsername(input.username);
+          if (!registration) {
+            return {
+              success: false,
+              found: false,
+              faceRegistered: false,
+            };
+          }
+
+          return {
+            success: true,
+            found: true,
+            username: registration.username,
+            faceRegistered: registration.faceRegistered || false,
+          };
+        } catch (error) {
+          console.error("[SearchUser] Error:", error);
+          throw new Error(
+            error instanceof Error ? error.message : "Failed to search user"
+          );
+        }
+      }),
   }),
 });
 

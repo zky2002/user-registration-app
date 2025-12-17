@@ -152,3 +152,24 @@ export async function updateRegistrationFace(
     throw error;
   }
 }
+
+export async function getRegistrationByUsername(username: string) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get registration: database not available");
+    return undefined;
+  }
+
+  try {
+    const result = await db
+      .select()
+      .from(registrations)
+      .where(eq(registrations.username, username))
+      .limit(1);
+
+    return result.length > 0 ? result[0] : undefined;
+  } catch (error) {
+    console.error("[Database] Failed to get registration by username:", error);
+    return undefined;
+  }
+}
